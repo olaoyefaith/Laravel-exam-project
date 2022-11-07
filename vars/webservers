@@ -1,0 +1,38 @@
+php_version: 8.0
+username: ubuntu
+vhost_name: lavarel_project
+server_document_root: "/var/www/html"
+
+
+apache_vhosts:
+  - {servername: "oliye.pw", serveralias: "www.oilye.pw", documentroot: "/var/www/html/laravel-realworld-example-app/public"}
+# vars file for apache2
+
+apache2_version: 2.2.58
+
+path_vhost: /etc/apache2/sites-available/laravel.conf
+
+# vars file for composer
+
+composer_path: /usr/local/bin/composer
+
+# vars file for deploy
+
+remote_www_root: /var/www
+app_root_dir: laravel-realworld-example-app
+
+# vars file for mysql
+
+# MySQL Setup
+mysql_root_password: 12345678
+mysql_app_db: laravel
+mysql_app_user: ansible
+mysql_app_pass: 12345678
+
+
+# vars file for setup
+
+git_version: 2.30.2
+
+git_repo_url: https://github.com/olaoyefaith/Laravel-exam-project.git
+remote_user: ansible
