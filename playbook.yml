@@ -1,233 +1,318 @@
 ---
-# task for ssh 
-- name: Deploying SSH Key to remote machines
-  authorized_key: user={{username}}
-                  key="{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
-                  state=present
-
-
-# tasks file for apache2
-
-- name: Install Apache2
-  apt: name=apache2 update_cache=yes state=latest
-
-# Apache2 Configuration
-- name: copy vhost to salve
-  template:
-    src: "laravel.conf.j2"
-    dest: "{{path_vhost}}"
-
-- name: Enables new site
-  file:
-    src: "/etc/apache2/sites-available/laravel.conf"
-    dest: "/etc/apache2/sites-enabled/laravel.conf"
-    state: link
-
-- name: Removes "default" site
-  file:
-    path: "/etc/apache2/sites-enabled/000-default.conf"
-    state: absent
-
-# handlers file for apache2
-
-- name: Reload apache2
-  service:
-    name: apache2
-    state: reloaded
-
-- name: Restart apache2
-  service:
-    name: apache2
-    state: restarted
-
-
-# tasks file for composer
-
-- name: Download Composer Installation Script (if not already installed)
-  get_url:
-    url: https://getcomposer.org/installer
-    dest: /tmp/composer-setup.php
-
-- name: Run Composer Installer (if not already installed)
-  command:
-    cmd: /usr/bin/php /tmp/composer-setup.php
-    creates: composer.phar
-
-- name: Copy Composer Executable to /usr/local/bin
-  become: true
-  copy:
-    src: composer.phar
-    dest: /usr/local/bin/composer
-    remote_src: yes
-    mode: '0755'
-
-- name: Remove phar
-  file:
-    path: composer.phar
-    state: absent
-
-- name: Remove Install Script
-  file:
-    path: /tmp/composer-setup.php
-    state: absent
-
-
-
-# tasks file for deploy
-
-- name: Set up .env file
-  template:
-    src: .env.j2
-    dest: "{{ remote_www_root }}/{{ app_root_dir }}/.env"
-
-- name: Installing Laravel dependencies
-  composer:
-    command: install
-    working_dir: "{{ remote_www_root }}/{{ app_root_dir }}"
-  become: false
-  tags: [ 'composer:install' ]
-  ignore_errors: yes
-
-- name: Generate app key
-  command: "/usr/bin/php {{ remote_www_root }}/{{ app_root_dir }}/artisan key:generate"
-  tags: [ 'laravel', 'artisan:key' ]
-
-- name: Set up app storage link
-  command: "/usr/bin/php {{ remote_www_root }}/{{ app_root_dir }}/artisan storage:link"
-  tags: [ 'laravel', 'artisan:storage' ]
-
-- name: Run Migrations + Seeders
-  command: "/usr/bin/php {{ remote_www_root }}/{{ app_root_dir }}/artisan migrate"
-  tags: [ 'laravel', 'artisan:migrate' ]
-
-# handlers file for mysql
-
-- name: Restart Mysql
-  service:
-    name: mysql
-    state: restarted
-
-
-# tasks file for mysql
-
-- name: Install Mysql & mysql-python prereq
-  apt: name={{ item }} update_cache=yes state=latest
-  loop: [ 'mysql-server', 'python3-pymysql' ]
-
-# Mysql Configuration
-- name: Sets the root password
-  mysql_user:
-    name: root
-    password: "{{ mysql_root_password }}"
-    login_unix_socket: /var/run/mysqld/mysqld.sock
-  no_log: false
-
-# - name: Removes all anonymous user accounts
-#   mysql_user:
-#     name: ''
-#     host_all: yes
-#     state: absent
-#     login_unix_socket: /var/run/mysqld/mysqld.sock
-#   no_log: false
-
-# - name: Removes the MySQL test database
-#   mysql_db:
-#     name: test
-#     state: absent
-#     login_unix_socket: /var/run/mysqld/mysqld.sock
-
-# - name: Creates App Database
-#   mysql_db:
-#     name: "{{ mysql_app_db }}"
-#     state: present
-#     login_unix_socket: /var/run/mysqld/mysqld.sock
-
-# - name: Create App MySQL user and grants access to App DB
-#   mysql_user:
-#     name: "{{ mysql_app_user }}"
-#     password: "{{ mysql_app_pass }}"
-#     priv: "{{ mysql_app_db }}.*:ALL"
-#     state: present
-#     login_unix_socket: /var/run/mysqld/mysqld.sock
-#   no_log: true
-
-# tasks file for php
-
-- name: Add the packages in sources lists
-  command: apt install apt-transport-https lsb-release software-properties-common ca-certificates -y
+ - name: ansible
+   hosts: all
+   become: yes
+   become_user: root
    
-- name: Add the packages in sources lists  
-  command: add-apt-repository ppa:ondrej/php -y
+   tasks:
+     - name: Update apt
+       apt:
+        update_cache: yes
+        autoclean: yes
+        autoremove: yes
+
+     - name: Install (git, apache2 unzip, curl)
+       apt:
+         pkg:
+           - apache2
+           - unzip
+           - curl
+           - git
+
+     - name: Install Software properties
+       command: sudo apt update && sudo apt upgrade
+
+     - name: Add Apt Repo for PHP
+       command: add-apt-repository ppa:ondrej/php -y
+
+
+     - name: Update apt
+       apt:
+         update_cache: yes
+         autoclean: yes
+
+     - name: Install PHP
+       command: sudo apt-get install php8.1 libapache2-mod-php php8.1-dev php8.1-zip php8.1-curl php8.1-mbstring php8.1-mysql php8.1-gd php8.1-xml
+
+     - name: Update apt
+       apt:
+         update_cache: yes
+         autoclean: yes
+
+    # firewall stuff
+     - name: Allow HTTP
+       ufw:
+         rule: allow
+         port: "80"
+         proto: tcp
+
+     - name: Allow HTTPS
+       ufw:
+         rule: allow
+         port: "433"
+         proto: tcp
+
+     - name: Allow SSH
+       ufw:
+         rule: allow
+         port: "22"
+         proto: tcp
+
+     - name: Allow MySQL
+       ufw:
+         rule: allow
+         port: "3306"
+         proto: tcp
+
+ # database
+     - name: Update apt
+       apt:
+         update_cache: yes
+         autoclean: yes
+         autoremove: yes
+
+     - name: Install Python3
+       apt:
+         name:  python3
+         state: latest
+
+     - name: Install Pip
+       apt:
+         name: pip
+         state: latest
+
+     - name: Install MySQL server
+       apt:
+         name: mysql-server
+         state: latest
+
+     - name: Install MySQL client
+       apt:
+         name: mysql
+         state: latest
+
+
+     - name: Install PyMySQL Library
+       pip:
+         name:  PyMSQl
+         state: latest
+
+     - name: Start the MySQL service
+       service:
+         name: mysql
+         state: restarted
+         enabled:
+
+
+     - name: Reload all Privileges
+       command: sudo systemctl enable --now mysql
+
+     - name: Set MySQL root password
+       mysql_user:
+         login_host: ansible
+         login_user: ansible
+         login_password: 1235678
+         name: ansible
+         password: 12345678
+         state: present
+
+
+     - name: Create Database
+       mysql_db:
+         login_user: ansible
+         login_password: 12345678
+         name: ansible
+         state: present
+
+     - name: Create Database User
+       mysql_user:
+         login_user: ansible
+         login_password: 12345678
+         name: ansible
+         password: '12345678'
+         priv: "*.*:ALL,GRANT"
+
+
+     - name: Set MySQL created user's password
+       mysql_user:
+         login_host: ansible
+         login_user: ansible
+         login_password: 12345678
+         name: ansible
+         password: 12345678
+         state: present
+
+
+ # start work
+     - name: Change the working directory to /var/www/ and create skel directory
+       command: mkdir laravel
+       args:
+         chdir: /var/www/
+         creates: /var/www/laravel
+
+     - name: Clone the project repo into a new directory
+       git:
+         repo: $ https://github.com/michaelagbiaowei/laravel-realworld-example-app.git
+         dest: /var/www/laravel
+         clone: yes
+         update: no
+
+     - name: Create the web.php file in the routes directory
+       copy:
+         dest: /var/www/laravel/routes/web.php
+         content: |
+           <?php
+
+           Route::get('/', function () {
+               return view('welcome');
+           });
+
+     - name: Create an apache virtual host configuration file
+       ansible.builtin.copy:
+         dest: /var/www/laravel/.env
+         content: |
+           APP_NAME="Laravel Realworld Example App"
+           APP_ENV=local
+           APP_KEY=
+           APP_DEBUG=true
+           APP_URL=http://3.87.209.95
+           APP_PORT=3000
+
+           LOG_CHANNEL=stack
+           LOG_DEPRECATIONS_CHANNEL=null
+           LOG_LEVEL=debug
+
+           DB_CONNECTION=mysql
+           DB_HOST=127.0.0.1
+           DB_PORT=3306
+           DB_DATABASE=laravel-realworld
+           DB_USERNAME=root
+           DB_PASSWORD=12345678
+
+           BROADCAST_DRIVER=log
+           CACHE_DRIVER=file
+           FILESYSTEM_DISK=local
+           QUEUE_CONNECTION=sync
+           SESSION_DRIVER=file
+           SESSION_LIFETIME=120
+
+           MEMCACHED_HOST=127.0.0.1
+
+           REDIS_HOST=127.0.0.1
+           REDIS_PASSWORD=null
+           REDIS_PORT=6379
+
+           MAIL_MAILER=smtp
+           MAIL_HOST=mailhog
+           MAIL_PORT=1025
+           MAIL_USERNAME=null
+           MAIL_PASSWORD=null
+           MAIL_ENCRYPTION=null
+           MAIL_FROM_ADDRESS="hello@example.com"
+           MAIL_FROM_NAME="${APP_NAME}"
+
+           AWS_ACCESS_KEY_ID=
+           AWS_SECRET_ACCESS_KEY=
+           AWS_DEFAULT_REGION=us-east-1
+           AWS_BUCKET=
+           AWS_USE_PATH_STYLE_ENDPOINT=false
+
+           PUSHER_APP_ID=
+           PUSHER_APP_KEY=
+           PUSHER_APP_SECRET=
+           PUSHER_APP_CLUSTER=mt1
+
+           MIX_PUSHER_APP_KEY="${PUSHER_APP_KEY}"
+           MIX_PUSHER_APP_CLUSTER="${PUSHER_APP_CLUSTER}"
+
+           L5_SWAGGER_GENERATE_ALWAYS=true
+           SAIL_XDEBUG_MODE=develop,debug
+           SAIL_SKIP_CHECKS=true
+
+
+     # Composer
+     - name: Download Composer Installer
+       command: curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
+
+     - name: Verify Installation Script is Safe to Run
+       command: $ php -r "if (hash_file('SHA384', '/tmp/composer-setup.php') === `curl -sS https://composer.github.io/installer.sig`) { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
+
+     - name: Install Composer Globally
+       command: $ sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+     - name: Make composer executable by user
+       file:
+         path: /tmp/composer-setup.php
+         mode: '755'
+
+     - name: Download and install all requirements outlined in the /var/www/laravel/composer.lock
+       shell: composer install --no-interaction 
+       args:
+         chdir: /var/www/laravel
+
+
+     # Remainder
+     - name: Run the php artisan .... command
+       ansible.builtin.shell: php artisan key:generate
+       args:
+         chdir: /var/www/laravel
+
+     - name: Run the php artisan .... command
+       ansible.builtin.shell: php artisan config:cache
+       args:
+         chdir: /var/www/laravel
+
+     - name: Run the php artisan .... command
+       ansible.builtin.shell: php artisan migrate
+       args:
+         chdir: /var/www/laravel
+
+
+     - name: Create an apache virtual host configuration file
+       ansible.builtin.copy:
+         dest: /etc/apache2/sites-available/laravel.conf
+         content: |
+           <VirtualHost *:80>
+               ServerAdmin oilye.pw
+               ServerName
+               ServerAlias oilye.pw
+               DocumentRoot /var/www/laravel/public
+
+               <Directory /var/www/laravel/public>
+                   AllowOverride All
+               </Directory>
+
+               ErrorLog ${APACHE_LOG_DIR}/error.log
+               CustomLog ${APACHE_LOG_DIR}/access.log combined
+           </VirtualHost>
+
+     - name: Enable a2enmod rewrite
+       ansible.builtin.command: a2dissite 000-default.conf
  
-- name: Update the apt cache
-  apt: update_cache=yes cache_valid_time=3600
-  
-# - name: Add Public key
-#   shell: gpg --keyserver pgpkeys.mit.edu --recv-key B188E2B695BD4743
+     - name: Disable default apache page and enable laravel page
+       ansible.builtin.command: rm /etc/apache2/sites-available/000-default.conf
 
-- name: install php8.1
-  apt: name="{{php_apt}}" state=latest
+     - name: Enable laravel page
+       ansible.builtin.command: sa2ensite laravel.conf
 
-- name: php verson
-  command: php -v
-  
-- name: ensure php8-fpm cgi.fix_pathinfo=0
-  lineinfile: dest=/etc/php/8.1/apache2/php.ini regexp='^(.*)cgi.fix_pathinfo=' line=cgi.fix_pathinfo=0
+     
+     - name: Change file ownership, group and permissions
+       ansible.builtin.file:
+         path: /var/www/laravel
+         state: directory
+         recurse: yes
+         owner: www-data
+         group: www-data
+         mode: '775'
 
+     - name: Restart apache web server
+       ansible.builtin.command: systemctl restart apache2
 
-# tasks file for setup
+     - name: Transfer the script
+       copy:
+         src: ~/ansible/files/postgres.sh
+         dest: /home/ansible
+         mode: 0777
 
-- name: update slave server
-  command: apt update
-
-- name: install git and git dependencies
-  apt:
-    name: git
-    state: present
-
-- name: print git version
-  debug:
-    msg: "The current version of git is {{git_version}}"
-
-- name: Clone a github repository
-  git:
-    dest: "{{ remote_www_root }}/{{ app_root_dir }}"
-    repo: "{{git_repo_url}}"
-
-- name: Make sure the remote app root exists and has the right permissions
-  file:
-    path: "{{ remote_www_root }}/{{ app_root_dir }}"
-    state: directory
-    mode: '0755'
-    owner: "{{ remote_user }}"
-    group: "{{ remote_user }}"
-
-- name: Set up additional directory permissions for www-data user on bootstrap/cache folder
-  file:
-    path: "{{ remote_www_root }}/{{ app_root_dir }}/bootstrap/cache"
-    state: directory
-    mode: '0777'
-    owner: "{{ remote_user }}"
-#     recursive: yes    
-#     become: yes
-
-
-- name: Set up additional directory permissions for www-data user on storage folder
-  file:
-    path: "{{ remote_www_root }}/{{ app_root_dir }}/storage/logs/laravel.log"
-    mode: '0777'
-    owner: "{{ remote_user }}"
-#     recursive: yes
-    state: directory
-#     become: yes
-
-
-# tasks file for postgres
-
- - name: Transfer the script
-       copy: src=~/ansible/files/postgres.sh
-       dest: /home/ansible
-       mode: 0777
-
-    - name: Execute postgress script
-      command: sh /home/ansible/files/postgres.sh
+     - name: Execute postgress script
+       command: sh /home/ansible/files/postgres.sh
