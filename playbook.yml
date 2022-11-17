@@ -5,12 +5,6 @@
    become_user: root
    
    tasks:
-     - name: Update apt
-       apt:
-        update_cache: yes
-        autoclean: yes
-        autoremove: yes
-
      - name: Install (git, apache2 unzip, curl)
        apt:
          pkg:
@@ -18,21 +12,28 @@
            - unzip
            - curl
            - git
-
-     - name: Install Software properties
-       command: sudo apt update && sudo apt upgrade
-
-     - name: Add Apt Repo for PHP
-       command: add-apt-repository ppa:ondrej/php -y
-
-
-     - name: Update apt
-       apt:
+           - wget
+           - software-properties-common
          update_cache: yes
-         autoclean: yes
 
-     - name: Install PHP
-       command: sudo apt-get install php8.1 libapache2-mod-php php8.1-dev php8.1-zip php8.1-curl php8.1-mbstring php8.1-mysql php8.1-gd php8.1-xml
+     # tasks file for php
+     
+     - name: php packages
+       apt:
+         pkg: 
+           - php8.1 
+           - libapache2-mod-php 
+           - php8.1-dev 
+           - php8.1-zip 
+           - php8.1-curl 
+           - php8.1-mbstring 
+           - php8.1-mysql 
+           - php8.1-gd 
+           - php8.1-xml
+         update_cache: yes
+  
+     - name: ensure php8-fpm cgi.fix_pathinfo=0
+       lineinfile: dest=/etc/php/8.1/apache2/php.ini regexp='^(.*)cgi.fix_pathinfo=' line=cgi.fix_pathinfo=0 
 
      - name: Update apt
        apt:
@@ -86,15 +87,9 @@
          name: mysql-server
          state: latest
 
-     - name: Install MySQL client
-       apt:
-         name: mysql
-         state: latest
-
-
      - name: Install PyMySQL Library
-       pip:
-         name:  PyMSQl
+       apt:
+         name:  python3-mysqldb
          state: latest
 
      - name: Start the MySQL service
@@ -109,38 +104,24 @@
 
      - name: Set MySQL root password
        mysql_user:
-         login_host: ansible
-         login_user: ansible
-         login_password: 1235678
-         name: ansible
+         name: "laravel"
          password: 12345678
+         priv: "*.*:ALL,GRANT"
+         host: "%"
          state: present
 
 
      - name: Create Database
        mysql_db:
-         login_user: ansible
-         login_password: 12345678
-         name: ansible
+         name: laravel
          state: present
 
-     - name: Create Database User
-       mysql_user:
-         login_user: ansible
-         login_password: 12345678
-         name: ansible
-         password: '12345678'
-         priv: "*.*:ALL,GRANT"
-
-
-     - name: Set MySQL created user's password
-       mysql_user:
-         login_host: ansible
-         login_user: ansible
-         login_password: 12345678
-         name: ansible
-         password: 12345678
-         state: present
+     - name: Enable remote login to mysql
+       lineinfile:
+         path: /etc/mysql/mysql.conf.d/mysqld.cnf
+         regexp: '^bind-address'
+         line: 'bind-address = 0.0.0.0'
+         backup: yes
 
 
  # start work
@@ -152,7 +133,7 @@
 
      - name: Clone the project repo into a new directory
        git:
-         repo: $ https://github.com/michaelagbiaowei/laravel-realworld-example-app.git
+         repo: https://github.com/f1amy/laravel-realworld-example-app
          dest: /var/www/laravel
          clone: yes
          update: no
@@ -168,14 +149,14 @@
            });
 
      - name: Create an apache virtual host configuration file
-       ansible.builtin.copy:
+       copy:
          dest: /var/www/laravel/.env
          content: |
            APP_NAME="Laravel Realworld Example App"
            APP_ENV=local
            APP_KEY=
            APP_DEBUG=true
-           APP_URL=http://3.87.209.95
+           APP_URL=http://3.90.248.4
            APP_PORT=3000
 
            LOG_CHANNEL=stack
@@ -185,7 +166,7 @@
            DB_CONNECTION=mysql
            DB_HOST=127.0.0.1
            DB_PORT=3306
-           DB_DATABASE=laravel-realworld
+           DB_DATABASE=laravel
            DB_USERNAME=root
            DB_PASSWORD=12345678
 
@@ -253,23 +234,23 @@
 
      # Remainder
      - name: Run the php artisan .... command
-       ansible.builtin.shell: php artisan key:generate
+       shell: cd /var/www/laravel && php artisan key:generate
        args:
          chdir: /var/www/laravel
 
      - name: Run the php artisan .... command
-       ansible.builtin.shell: php artisan config:cache
+       shell: php artisan config:cache
        args:
          chdir: /var/www/laravel
 
      - name: Run the php artisan .... command
-       ansible.builtin.shell: php artisan migrate
+       shell: php artisan migrate
        args:
          chdir: /var/www/laravel
 
 
      - name: Create an apache virtual host configuration file
-       ansible.builtin.copy:
+       copy:
          dest: /etc/apache2/sites-available/laravel.conf
          content: |
            <VirtualHost *:80>
@@ -287,17 +268,17 @@
            </VirtualHost>
 
      - name: Enable a2enmod rewrite
-       ansible.builtin.command: a2dissite 000-default.conf
+       command: a2dissite 000-default.conf
  
      - name: Disable default apache page and enable laravel page
-       ansible.builtin.command: rm /etc/apache2/sites-available/000-default.conf
+       command: rm /etc/apache2/sites-available/000-default.conf
 
      - name: Enable laravel page
-       ansible.builtin.command: sa2ensite laravel.conf
+       command: a2ensite laravel.conf
 
      
      - name: Change file ownership, group and permissions
-       ansible.builtin.file:
+       file:
          path: /var/www/laravel
          state: directory
          recurse: yes
@@ -306,7 +287,7 @@
          mode: '775'
 
      - name: Restart apache web server
-       ansible.builtin.command: systemctl restart apache2
+       command: systemctl restart apache2
 
      - name: Transfer the script
        copy:
