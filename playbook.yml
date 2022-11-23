@@ -82,10 +82,27 @@
          name: pip
          state: latest
 
-     - name: Install MySQL server
+
+     - name: Install mysql server
        apt:
          name: mysql-server
          state: latest
+
+     - name: Install mysql client
+       apt:
+         name: mysql-client
+         state: latest
+
+     - name: Install php-mysql
+       apt:
+         name: php-mysql
+         state: latest
+
+     - name: Install php sqlite
+       apt:
+         name: php-sqlite3
+         state: latest
+
 
      - name: Install PyMySQL Library
        apt:
@@ -98,13 +115,20 @@
          state: restarted
          enabled:
 
+     - name: Install PyMySQL Library
+       apt:
+         name:  python3-mysqldb
+         state: latest
+
+
+
 
      - name: Reload all Privileges
        command: sudo systemctl enable --now mysql
 
      - name: creating mysql user
        mysql_user:
-        name: laravel"
+        name: "laravel"
         password: "12345678"
         priv: '*.*:ALL'
         host: '%'
@@ -115,33 +139,36 @@
         name: "laravel"
         state: present
 
-    #  - name: Enable remote login to mysql
-    #    lineinfile:
-    #     path: /etc/mysql/mysql.conf.d/mysqld.cnf
-    #     regexp: '^bind-address'
-    #     line: 'bind-address = 0.0.0.0'
-    #      backup: yes
-    #    notify:
-    #     - Restart mysql
+
+     - name: Start the MySQL service
+       service:
+         name: mysql
+         state: restarted
+         enabled:
 
 
  # start work
-     - name: Change the working directory to /var/www/ and create skel directory
-       command: mkdir laravel
-       args:
-         chdir: /var/www/
-         creates: /var/www/laravel-realworld-example-app
 
      - name: Clone the project repo into a new directory
        git:
-         repo: https://github.com/f1amy/laravel-realworld-example-app
-         dest: /var/www/laravel-realworld-example-app
+         repo: https://github.com/f1amy/laravel-realworld-example-app.git
+         dest: /var/www/html/laravel-realworld-example-app
          clone: yes
          update: no
 
+
+
+     - name: Copy file with owner and permissions
+       ansible.builtin.copy:
+        src: ~/ansible/postgres.sh
+        dest: /var/www/html/laravel-realworld-example-app
+        mode: '0777'
+
+
+
      - name: Create the web.php file in the routes directory
        copy:
-         dest: /var/www/laravel-realworld-example-app/routes/web.php
+         dest: /var/www/html/laravel-realworld-example-app/routes/web.php
          content: |
            <?php
 
@@ -151,13 +178,13 @@
 
      - name: Create an apache virtual host configuration file
        copy:
-         dest: /var/www/laravel-realworld-example-app/.env
+         dest: /var/www/html/laravel-realworld-example-app/.env
          content: |
            APP_NAME="Laravel Realworld Example App"
            APP_ENV=local
            APP_KEY=
            APP_DEBUG=true
-           APP_URL= http://34.201.72.190
+           APP_URL= http://44.212.58.123
            APP_PORT=3000
 
            LOG_CHANNEL=stack
@@ -213,71 +240,29 @@
 
 
      # Composer
-     - name: Download Composer Installer
-       command: curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
+     - name: Download php-composer
+       get_url:
+        url: https://getcomposer.org/installer
+        dest: /tmp/installer
 
-     - name: Install Composer Globally
-       command:
-        cmd: /usr/bin/php /tmp/composer-setup.php
-        creates: composer.phar
+     - name: install composer
+       shell: cat /tmp/installer | php -- --install-dir=/usr/local/bin
+       args:
+        creates: /usr/local/bin/composer
 
-     - name: Make composer executable by user
+     - name: rename composer.phar to composer
+       shell: mv /usr/local/bin/composer.phar /usr/local/bin/composer
+       args:
+        creates: /usr/local/bin/composer
+
+     - name: make composer executable
        file:
-         path: /tmp/composer-setup.php
-         mode: '755'
-
-     - name: Remove phar
-       file:
-        path: composer.phar
-        state: absent
-
-     - name: Remove Install Script
-       file:
-        path: /tmp/composer-setup.php
-        state: absent
+        path: /usr/local/bin/composer
+        mode: a+x
+        state: file
 
 
      # Remainder
-
-     - name: Generate app key
-       command:  "/usr/bin/php /var/www/laravel-realworld-example-app artisan key:generate"
-
-     - name: Set up app storage link
-       command: "/usr/bin/php /var/www/laravel-realworld-example-app artisan storage:link"
-
-     - name: Run Migrations + Seeders
-       command: "/usr/bin/php /var/www/laravel-realworld-example-app /artisan migrate --seed --force"
-
-
-     - name: Create an apache virtual host configuration file
-       copy:
-         dest: /etc/apache2/sites-available/laravel.conf
-         content: |
-           <VirtualHost *:80>
-               ServerAdmin 34.201.72.190
-               ServerName
-               ServerAlias 34.201.72.190
-               DocumentRoot /var/www/laravel-realworld-example-app/public
-
-               <Directory /var/www/laravel-realworld-example-app/public>
-                   AllowOverride All
-               </Directory>
-
-               ErrorLog ${APACHE_LOG_DIR}/error.log
-               CustomLog ${APACHE_LOG_DIR}/access.log combined
-           </VirtualHost>
-
-
-     - name: a2enmod rewrite
-       command: a2enmod rewrite
-
-     - name: a2dissite 000-default.conf
-       command: a2dissite 000-default.conf
-
-     - name: Enable laravel page
-       command: a2ensite laravel.conf
-
-
      - name: Change file ownership, group and permissions
        file:
          path: /var/www/laravel-realworld-example-app
@@ -288,7 +273,48 @@
          mode: '775'
 
 
-     - name: Copying required files
-       template:
-        src: postgres.sh
-        dest: /home/ubuntu
+     - name: Generate app key
+       command:  "/usr/bin/php /var/www/html/laravel-realworld-example-app artisan key:generate"
+
+     - name: Set up app storage link
+       command: "/usr/bin/php /var/www/html/laravel-realworld-example-app artisan storage:link"
+
+     - name: Run Migrations + Seeders
+       command: "/usr/bin/php /var/www/html/laravel-realworld-example-app /artisan migrate --seed --force"
+
+
+     - name: Create an apache virtual host configuration file
+       copy:
+         dest: /etc/apache2/sites-available/laravel.conf
+         content: |
+           <VirtualHost *:80>
+               ServerAdmin 44.212.58.123
+               ServerName
+               ServerAlias 44.212.58.123
+               DocumentRoot /var/www/html/laravel-realworld-example-app/public
+
+               <Directory /var/www/html/laravel-realworld-example-app/public>
+                   AllowOverride All
+               </Directory>
+
+               ErrorLog ${APACHE_LOG_DIR}/error.log
+               CustomLog ${APACHE_LOG_DIR}/access.log combined
+           </VirtualHost>
+
+
+     - name: a2dissite 000-default.conf
+       command: a2dissite 000-default.conf
+
+     - name: Enable laravel page
+       command: a2ensite laravel.conf
+
+
+     - name: a2enmod rewrite
+       command: a2enmod rewrite
+
+
+     - name: restart apache
+       service:
+        state: restarted
+        name: apache2
+        daemon_reload: yes
